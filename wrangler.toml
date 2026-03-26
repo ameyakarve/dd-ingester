@@ -12,3 +12,20 @@ id = "dfbf88ee16984601b5227d85902fe252"
 [[queues.producers]]
 queue = "rss-articles"
 binding = "RSS_QUEUE"
+
+[[queues.producers]]
+queue = "rss-articles-rendered"
+binding = "RENDERED_QUEUE"
+
+[[queues.consumers]]
+queue = "rss-articles"
+max_retries = 5
+max_batch_size = 5
+max_batch_timeout = 30
+
+[[r2_buckets]]
+bucket_name = "dd-articles-markdown"
+binding = "ARTICLES_BUCKET"
+
+[browser]
+binding = "BROWSER"
