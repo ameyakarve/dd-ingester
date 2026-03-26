@@ -6,9 +6,10 @@ import { triageArticle } from "./triage";
 export interface Env {
   SEEN_URLS: KVNamespace;
   RSS_QUEUE: Queue<FeedItem>;
-  BROWSER: Fetcher;
   ARTICLES_BUCKET: R2Bucket;
   RENDERED_QUEUE: Queue<RenderedArticle>;
+  CLOUDFLARE_ACCOUNT_ID: string;
+  CLOUDFLARE_API_TOKEN: string;
   AI_GATEWAY_URL: string;
   NVIDIA_API_KEY: string;
 }
@@ -127,7 +128,7 @@ export default {
           const item = message.body as FeedItem;
           console.log(`Rendering: ${item.url}`);
 
-          const rendered = await renderArticle(item, env.BROWSER, env.ARTICLES_BUCKET);
+          const rendered = await renderArticle(item, env.CLOUDFLARE_ACCOUNT_ID, env.CLOUDFLARE_API_TOKEN, env.ARTICLES_BUCKET);
           await env.RENDERED_QUEUE.send(rendered);
 
           message.ack();
