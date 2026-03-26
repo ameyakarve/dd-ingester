@@ -1,0 +1,14 @@
+name = "dd-ingester"
+main = "src/index.ts"
+compatibility_date = "2025-03-26"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[kv_namespaces]]
+binding = "SEEN_URLS"
+id = "dfbf88ee16984601b5227d85902fe252"
+
+[[queues.producers]]
+queue = "rss-articles"
+binding = "RSS_QUEUE"
