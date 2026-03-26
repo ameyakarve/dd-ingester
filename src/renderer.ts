@@ -12,10 +12,11 @@ const RENDER_TIMEOUT_MS = 30_000;
 
 export async function renderArticle(
   item: FeedItem,
-  browser: Fetcher,
+  accountId: string,
+  apiToken: string,
   bucket: R2Bucket
 ): Promise<RenderedArticle> {
-  const markdown = await fetchMarkdown(item.url, browser);
+  const markdown = await fetchMarkdown(item.url, accountId, apiToken);
   const r2Key = buildR2Key(item);
 
   await bucket.put(r2Key, markdown, {
@@ -36,24 +37,34 @@ export async function renderArticle(
   };
 }
 
-async function fetchMarkdown(url: string, browser: Fetcher): Promise<string> {
-  const endpoint = `https://browser-rendering.cloudflare.com/markdown`;
-  const response = await browser.fetch(endpoint, {
+async function fetchMarkdown(url: string, accountId: string, apiToken: string): Promise<string> {
+  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/browser-rendering/markdown`;
+  const response = await fetch(endpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiToken}`,
+    },
     body: JSON.stringify({
       url,
-      waitUntil: "domcontentloaded",
-      timeout: RENDER_TIMEOUT_MS,
+      gotoOptions: {
+        waitUntil: "domcontentloaded",
+        timeout: RENDER_TIMEOUT_MS,
+      },
     }),
   });
 
   if (!response.ok) {
-    throw new Error(`Browser rendering failed for ${url}: ${response.status} ${response.statusText}`);
+    const body = await response.text();
+    throw new Error(`Browser rendering failed for ${url}: ${response.status} ${body.slice(0, 200)}`);
   }
 
-  const result = await response.text();
-  return result;
+  const data = (await response.json()) as { success: boolean; result: string };
+  if (!data.success) {
+    throw new Error(`Browser rendering returned success=false for ${url}`);
+  }
+
+  return data.result;
 }
 
 function buildR2Key(item: FeedItem): string {
