@@ -23,9 +23,21 @@ max_retries = 5
 max_batch_size = 5
 max_batch_timeout = 30
 
+[[queues.consumers]]
+queue = "rss-articles-rendered"
+max_retries = 5
+max_batch_size = 1
+max_batch_timeout = 60
+
 [[r2_buckets]]
 bucket_name = "dd-articles-markdown"
 binding = "ARTICLES_BUCKET"
 
 [browser]
 binding = "BROWSER"
+
+[vars]
+AI_GATEWAY_URL = "https://gateway.ai.cloudflare.com/v1/e0bc1f55dc6fc3f8fe870087199a2ee3/dd-ai-gateway/custom-nvidia-nim"
+
+[observability]
+enabled = true
