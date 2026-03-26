@@ -12,6 +12,7 @@ export interface Env {
   CLOUDFLARE_API_TOKEN: string;
   AI_GATEWAY_URL: string;
   NVIDIA_API_KEY: string;
+  CF_AIG_TOKEN: string;
 }
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -155,7 +156,7 @@ export default {
           const markdown = await obj.text();
 
           // Call all models and log results
-          await triageArticle(article, markdown, env.AI_GATEWAY_URL, env.NVIDIA_API_KEY);
+          await triageArticle(article, markdown, env.AI_GATEWAY_URL, env.NVIDIA_API_KEY, env.CF_AIG_TOKEN);
 
           // 5s delay between articles to avoid rate limits
           await new Promise((resolve) => setTimeout(resolve, 5000));
