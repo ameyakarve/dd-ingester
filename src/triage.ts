@@ -128,7 +128,7 @@ async function callModel(
         { role: "user", content: userMessage },
       ],
       temperature: 0.1,
-      max_tokens: 256,
+      max_tokens: 4096,
     }),
   });
 
@@ -141,7 +141,8 @@ async function callModel(
     choices: Array<{ message: { content: string; reasoning_content?: string } }>;
   };
 
-  const content = data.choices?.[0]?.message?.content ?? "";
+  const message = data.choices?.[0]?.message;
+  const content = message?.content || message?.reasoning_content || "";
 
   // Extract JSON from response (handle models that wrap in markdown code blocks)
   const jsonMatch = content.match(/\{[\s\S]*?"status"[\s\S]*?\}/);
