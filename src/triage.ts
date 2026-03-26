@@ -60,6 +60,7 @@ export async function triageArticle(
   markdown: string,
   gatewayBaseUrl: string,
   nvidiaApiKey: string,
+  cfAigToken: string,
 ): Promise<TriageResult[]> {
   const truncatedContent = markdown.length > ARTICLE_CONTENT_LIMIT
     ? markdown.slice(0, ARTICLE_CONTENT_LIMIT) + "\n\n[TRUNCATED]"
@@ -71,7 +72,7 @@ export async function triageArticle(
 
   for (const model of TRIAGE_MODELS) {
     try {
-      const result = await callModel(model, userMessage, gatewayBaseUrl, nvidiaApiKey);
+      const result = await callModel(model, userMessage, gatewayBaseUrl, nvidiaApiKey, cfAigToken);
       results.push({
         url: article.url,
         title: article.title,
@@ -111,12 +112,14 @@ async function callModel(
   userMessage: string,
   gatewayBaseUrl: string,
   nvidiaApiKey: string,
+  cfAigToken: string,
 ): Promise<{ status: "relevant" | "irrelevant" | "incomplete" | "error"; reason: string }> {
   const response = await fetch(`${gatewayBaseUrl}/v1/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${nvidiaApiKey}`,
+      "cf-aig-authorization": `Bearer ${cfAigToken}`,
     },
     body: JSON.stringify({
       model,
