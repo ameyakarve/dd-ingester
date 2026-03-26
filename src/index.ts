@@ -1,9 +1,13 @@
 import { RSS_FEEDS } from "./feeds";
 import { parseFeed, type FeedItem } from "./rss";
+import { renderArticle, type RenderedArticle } from "./renderer";
 
 export interface Env {
   SEEN_URLS: KVNamespace;
   RSS_QUEUE: Queue<FeedItem>;
+  BROWSER: Fetcher;
+  ARTICLES_BUCKET: R2Bucket;
+  RENDERED_QUEUE: Queue<RenderedArticle>;
 }
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -56,6 +60,27 @@ export default {
     ctx.waitUntil(markUrlsSeen(newItems, env.SEEN_URLS));
 
     console.log(`Enqueued ${newItems.length} new articles`);
+  },
+
+  async queue(batch: MessageBatch, env: Env): Promise<void> {
+    console.log(`Processing batch of ${batch.messages.length} articles for rendering`);
+
+    for (const message of batch.messages) {
+      try {
+        const item = message.body as FeedItem;
+        console.log(`Rendering: ${item.url}`);
+
+        const rendered = await renderArticle(item, env.BROWSER, env.ARTICLES_BUCKET);
+        await env.RENDERED_QUEUE.send(rendered);
+
+        message.ack();
+        console.log(`Rendered and enqueued: ${item.url} -> ${rendered.r2Key}`);
+      } catch (err) {
+        const item = message.body as FeedItem;
+        console.error(`Failed to render ${item.url}: ${err}`);
+        message.retry();
+      }
+    }
   },
 } satisfies ExportedHandler<Env>;
 
