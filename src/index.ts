@@ -1,6 +1,6 @@
 import { RSS_FEEDS } from "./feeds";
 import { parseFeed, type FeedItem } from "./rss";
-import { renderArticle, type RenderedArticle } from "./renderer";
+import { renderArticle, isArticleContent, type RenderedArticle } from "./renderer";
 import { cleanArticle, type CleanedArticle } from "./cleaner";
 import { triageArticle } from "./triage";
 import type { AiGatewayConfig } from "./ai-gateway";
@@ -8,7 +8,7 @@ import type { AiGatewayConfig } from "./ai-gateway";
 export interface Env {
   SEEN_URLS: KVNamespace;
   DB: D1Database;
-  RSS_QUEUE: Queue<FeedItem>;
+  RSS_QUEUE: Queue<FeedItem & { renderRetry?: number }>;
   ARTICLES_BUCKET: R2Bucket;
   RENDERED_QUEUE: Queue<RenderedArticle>;
   CLEANED_QUEUE: Queue<CleanedArticle>;
@@ -23,6 +23,7 @@ const QUEUE_RSS = "rss-articles";
 const QUEUE_RENDERED = "rss-articles-rendered";
 const QUEUE_CLEANED = "rss-articles-cleaned";
 
+const MAX_RERENDER_RETRIES = 3;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const KV_TTL_SECONDS = 14 * 24 * 60 * 60;
 const FEED_FETCH_TIMEOUT_MS = 10_000;
@@ -99,11 +100,11 @@ export default {
 
     if (batch.queue === QUEUE_RSS) {
       for (const message of batch.messages) {
-        const item = message.body as FeedItem;
+        const item = message.body as FeedItem & { renderRetry?: number };
         try {
-          console.log(`Rendering: ${item.url}`);
+          console.log(`Rendering: ${item.url}${item.renderRetry ? ` (re-render attempt ${item.renderRetry})` : ""}`);
           const rendered = await renderArticle(item, env.CLOUDFLARE_ACCOUNT_ID, env.CLOUDFLARE_API_TOKEN, env.ARTICLES_BUCKET, ai);
-          await env.RENDERED_QUEUE.send(rendered);
+          await env.RENDERED_QUEUE.send({ ...rendered, renderRetry: item.renderRetry });
           message.ack();
           console.log(`Rendered and enqueued: ${item.url} -> ${rendered.r2RawKey}`);
         } catch (err) {
@@ -123,6 +124,19 @@ export default {
             continue;
           }
           const rawMarkdown = await obj.text();
+
+          if (!await isArticleContent(rawMarkdown, ai)) {
+            const retryCount = (article.renderRetry ?? 0) + 1;
+            if (retryCount > MAX_RERENDER_RETRIES) {
+              console.error(`Bot content persisted after ${MAX_RERENDER_RETRIES} re-renders, skipping: ${article.url}`);
+              message.ack();
+              continue;
+            }
+            console.warn(`Bot content detected in raw R2 for ${article.url}, requeuing for re-render (attempt ${retryCount}/${MAX_RERENDER_RETRIES})`);
+            await env.RSS_QUEUE.send({ url: article.url, title: article.title, published: article.published, feedUrl: article.feedUrl, renderRetry: retryCount });
+            message.ack();
+            continue;
+          }
 
           const cleaned = await cleanArticle(article, rawMarkdown, ai, env.ARTICLES_BUCKET);
 

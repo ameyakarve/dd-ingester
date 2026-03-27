@@ -7,6 +7,7 @@ export interface RenderedArticle {
   published: string;
   feedUrl: string;
   r2RawKey: string;
+  renderRetry?: number;
 }
 
 const RENDER_TIMEOUT_MS = 30_000;
@@ -47,7 +48,7 @@ export async function renderArticle(
   };
 }
 
-async function isArticleContent(markdown: string, aiConfig: AiGatewayConfig): Promise<boolean> {
+export async function isArticleContent(markdown: string, aiConfig: AiGatewayConfig): Promise<boolean> {
   const snippet = markdown.slice(0, CONTENT_CHECK_LIMIT);
   const data = await callAIGateway(aiConfig, DEFAULT_MODEL, [
     { role: "system", content: CONTENT_CHECK_PROMPT },
