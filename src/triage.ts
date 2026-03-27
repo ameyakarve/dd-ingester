@@ -1,4 +1,5 @@
 import type { CleanedArticle } from "./cleaner";
+import { callAIGateway, DEFAULT_MODEL, type AiGatewayConfig } from "./ai-gateway";
 
 export interface TriageResult {
   url: string;
@@ -7,7 +8,7 @@ export interface TriageResult {
   reason: string;
 }
 
-const TRIAGE_MODEL = "moonshotai/kimi-k2-thinking";
+const TRIAGE_MODEL = DEFAULT_MODEL;
 
 const SYSTEM_PROMPT = `You are a triage classifier for a travel rewards knowledge base focused on the Indian market.
 
@@ -49,9 +50,7 @@ const ARTICLE_CONTENT_LIMIT = 8000;
 export async function triageArticle(
   article: CleanedArticle,
   cleanedContent: string,
-  gatewayBaseUrl: string,
-  nvidiaApiKey: string,
-  cfAigToken: string,
+  aiConfig: AiGatewayConfig,
 ): Promise<TriageResult> {
   const truncatedContent = cleanedContent.length > ARTICLE_CONTENT_LIMIT
     ? cleanedContent.slice(0, ARTICLE_CONTENT_LIMIT) + "\n\n[TRUNCATED]"
@@ -59,35 +58,12 @@ export async function triageArticle(
 
   const userMessage = `Title: ${article.title}\nURL: ${article.url}\n\n${truncatedContent}`;
 
-  const response = await fetch(`${gatewayBaseUrl}/v1/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${nvidiaApiKey}`,
-      "cf-aig-authorization": `Bearer ${cfAigToken}`,
-    },
-    body: JSON.stringify({
-      model: TRIAGE_MODEL,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userMessage },
-      ],
-      temperature: 0.1,
-      max_tokens: 4096,
-    }),
-  });
+  const data = await callAIGateway(aiConfig, TRIAGE_MODEL, [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user", content: userMessage },
+  ]);
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Triage ${response.status}: ${body.slice(0, 200)}`);
-  }
-
-  const data = (await response.json()) as {
-    choices: Array<{ message: { content: string; reasoning_content?: string } }>;
-  };
-
-  const message = data.choices?.[0]?.message;
-  const content = message?.content || message?.reasoning_content || "";
+  const content = data.choices?.[0]?.message?.content ?? "";
 
   const jsonMatch = content.match(/\{[\s\S]*?"status"[\s\S]*?\}/);
   if (!jsonMatch) {

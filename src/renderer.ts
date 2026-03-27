@@ -5,7 +5,7 @@ export interface RenderedArticle {
   title: string;
   published: string;
   feedUrl: string;
-  r2Key: string;
+  r2RawKey: string;
 }
 
 const RENDER_TIMEOUT_MS = 30_000;
@@ -17,9 +17,9 @@ export async function renderArticle(
   bucket: R2Bucket
 ): Promise<RenderedArticle> {
   const markdown = await fetchMarkdown(item.url, accountId, apiToken);
-  const r2Key = buildR2Key(item);
+  const r2RawKey = buildR2Key(item);
 
-  await bucket.put(r2Key, markdown, {
+  await bucket.put(r2RawKey, markdown, {
     customMetadata: {
       url: item.url,
       title: item.title,
@@ -33,7 +33,7 @@ export async function renderArticle(
     title: item.title,
     published: item.published,
     feedUrl: item.feedUrl,
-    r2Key,
+    r2RawKey,
   };
 }
 
@@ -76,5 +76,5 @@ function buildR2Key(item: FeedItem): string {
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 120);
-  return `${date}/${hostname}/${slug}.md`;
+  return `raw/${date}/${hostname}/${slug}.md`;
 }
