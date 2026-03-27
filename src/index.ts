@@ -14,7 +14,6 @@ export interface Env {
   CLEANED_QUEUE: Queue<CleanedArticle>;
   CLOUDFLARE_ACCOUNT_ID: string;
   CLOUDFLARE_API_TOKEN: string;
-  AI_GATEWAY_URL: string;
   CF_AIG_TOKEN: string;
 }
 
@@ -28,8 +27,10 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const KV_TTL_SECONDS = 14 * 24 * 60 * 60;
 const FEED_FETCH_TIMEOUT_MS = 10_000;
 
+const AI_GATEWAY_NAME = "dd-ai-gateway";
+
 function aiConfig(env: Env): AiGatewayConfig {
-  return { baseUrl: env.AI_GATEWAY_URL, cfAigToken: env.CF_AIG_TOKEN };
+  return { accountId: env.CLOUDFLARE_ACCOUNT_ID, gateway: AI_GATEWAY_NAME, cfAigToken: env.CF_AIG_TOKEN };
 }
 
 export default {

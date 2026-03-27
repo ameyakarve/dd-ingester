@@ -1,5 +1,5 @@
 import type { RenderedArticle } from "./renderer";
-import { callAIGateway, extractContent, DEFAULT_MODEL, type AiGatewayConfig } from "./ai-gateway";
+import { callAIGateway, type AiGatewayConfig } from "./ai-gateway";
 
 export interface CleanedArticle {
   url: string;
@@ -46,15 +46,10 @@ export async function cleanArticle(
 
   const userMessage = `Title: ${article.title}\nURL: ${article.url}\n\n---\n\n${truncatedInput}`;
 
-  const data = await callAIGateway(aiConfig, DEFAULT_MODEL, [
+  const cleanedContent = await callAIGateway(aiConfig, [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: userMessage },
-  ], { max_tokens: 8192 });
-
-  const cleanedContent = extractContent(data);
-  if (!cleanedContent) {
-    throw new Error("Cleaner returned empty content");
-  }
+  ], { maxOutputTokens: 8192 });
 
   const r2CleanKey = article.r2RawKey.startsWith("raw/")
     ? article.r2RawKey.replace(/^raw\//, "clean/")
