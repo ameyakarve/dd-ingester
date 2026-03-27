@@ -81,7 +81,7 @@ Cloudflare Worker that polls RSS feeds, renders articles to markdown, strips boi
 | `src/ai-gateway.ts` | Shared AI Gateway client (`callAIGateway`, `DEFAULT_MODEL`) |
 | `src/renderer.ts` | Stage 1: Browser Rendering API → raw markdown in R2 |
 | `src/cleaner.ts` | Stage 2: DeepSeek boilerplate removal → cleaned markdown in R2 + D1 |
-| `src/triage.ts` | Stage 3: Kimi K2 relevance classification → D1 update |
+| `src/triage.ts` | Stage 3: DeepSeek relevance classification → D1 update |
 | `src/rss.ts` | RSS/Atom XML parser with URL normalization |
 | `src/feeds.ts` | Static list of 33 RSS feed URLs |
 
@@ -100,40 +100,97 @@ All operations use the Cloudflare account ID `e0bc1f55dc6fc3f8fe870087199a2ee3`.
 export CF_ACCOUNT_ID=e0bc1f55dc6fc3f8fe870087199a2ee3
 ```
 
-### Send a message to a queue
+### Send messages to a queue
 
-Use the [Cloudflare Queue REST API](https://developers.cloudflare.com/api/resources/queues/subresources/messages/methods/push/) to inject messages at any stage.
+Use the [Cloudflare Queue REST API](https://developers.cloudflare.com/api/resources/queues/subresources/messages/methods/push/). The `body` field must be a JSON **object** (not a stringified JSON string).
 
-First, get the queue ID:
+#### Setup
+
+```bash
+export CF_ACCOUNT_ID=e0bc1f55dc6fc3f8fe870087199a2ee3
+export CF_API_TOKEN=<your-cloudflare-api-token>
+```
+
+Get queue IDs:
 
 ```bash
 npx wrangler queues list
+# Or via API:
+curl -s "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/queues" \
+  -H "Authorization: Bearer $CF_API_TOKEN" | jq '.result[] | {queue_name, queue_id}'
 ```
 
-Then push a message (example: trigger rendering for a specific URL):
+#### Single message
 
 ```bash
-curl -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/queues/<QUEUE_ID>/messages" \
+QUEUE_ID=<queue-id>
+curl -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/queues/$QUEUE_ID/messages" \
   -H "Authorization: Bearer $CF_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "body": "{\"url\":\"https://example.com/article\",\"title\":\"Test\",\"published\":\"2026-03-27T00:00:00Z\",\"feedUrl\":\"https://example.com/feed\"}",
-    "content_type": "json"
-  }'
+  -d '{"body":{"url":"https://example.com/article","title":"Test","published":"2026-03-27T00:00:00Z","feedUrl":"https://example.com/feed"}}'
 ```
 
-Queue message schemas by stage:
+#### Batch messages (up to 100 per call)
+
+```bash
+curl -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/queues/$QUEUE_ID/messages/batch" \
+  -H "Authorization: Bearer $CF_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"body":{...}},{"body":{...}}]}'
+```
+
+#### Queue message schemas by stage
 
 ```jsonc
-// rss-articles (Stage 1 input)
+// rss-articles (Stage 1 input — render)
 { "url": "...", "title": "...", "published": "ISO8601", "feedUrl": "..." }
 
-// rss-articles-rendered (Stage 2 input)
+// rss-articles-rendered (Stage 2 input — clean)
 { "url": "...", "title": "...", "published": "...", "feedUrl": "...", "r2RawKey": "raw/..." }
 
-// rss-articles-cleaned (Stage 3 input)
+// rss-articles-cleaned (Stage 3 input — triage)
 { "url": "...", "title": "...", "published": "...", "feedUrl": "...",
   "r2RawKey": "raw/...", "r2CleanKey": "clean/..." }
+```
+
+### Requeue all articles for re-cleaning and triage
+
+Dump article metadata from D1, then batch-send to the rendered queue:
+
+```bash
+QUEUE_ID=<rss-articles-rendered queue id>
+
+# Export articles from D1 as queue messages
+npx wrangler d1 execute dd-ingester-db --remote \
+  --command "SELECT url, title, published, feed_url, r2_raw_key FROM articles" --json \
+  | jq '.[0].results | map({body: {url: .url, title: .title, published: .published, feedUrl: .feed_url, r2RawKey: .r2_raw_key}})' \
+  > /tmp/queue-msgs.json
+
+# Send in batches of 10
+jq -c '[.[] | .body]' /tmp/queue-msgs.json \
+  | jq -c 'range(0; length; 10) as $i | {messages: [.[($i):($i+10)][] | {body: .}]}' \
+  | while read batch; do
+      echo "$batch" > /tmp/batch_payload.json
+      curl -s -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/queues/$QUEUE_ID/messages/batch" \
+        -H "Authorization: Bearer $CF_API_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d @/tmp/batch_payload.json | jq -c '{success: .success}'
+    done
+```
+
+### Clean up R2 and D1 before requeuing
+
+```bash
+# Delete all clean/ R2 objects
+npx wrangler d1 execute dd-ingester-db --remote \
+  --command "SELECT r2_clean_key FROM articles" --json \
+  | jq -r '.[0].results[].r2_clean_key' \
+  | while read key; do
+      npx wrangler r2 object delete "dd-articles-markdown/$key" --remote
+    done
+
+# Clear D1 articles table
+npx wrangler d1 execute dd-ingester-db --remote --command "DELETE FROM articles"
 ```
 
 ### Query articles from D1
@@ -155,17 +212,19 @@ Via wrangler CLI:
 npx wrangler d1 execute dd-ingester-db --command "SELECT url, title, triage_status, triage_reason FROM articles ORDER BY published DESC LIMIT 20"
 ```
 
-### List R2 objects
+### R2 operations
 
 ```bash
-# List raw rendered articles
-npx wrangler r2 object list dd-articles-markdown --prefix raw/
-
-# List cleaned articles
-npx wrangler r2 object list dd-articles-markdown --prefix clean/
-
 # Download a specific article
-npx wrangler r2 object get dd-articles-markdown "raw/2026-03-27/loyaltylobby.com/some-article.md"
+npx wrangler r2 object get "dd-articles-markdown/raw/2026-03-27/loyaltylobby.com/some-article.md" --remote --pipe > article.md
+
+# Delete a specific object
+npx wrangler r2 object delete "dd-articles-markdown/raw/2026-03-27/loyaltylobby.com/some-article.md" --remote
+
+# List objects by prefix (via API — wrangler has no list command)
+curl -s "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/r2/buckets/dd-articles-markdown/objects" \
+  -H "Authorization: Bearer $CF_API_TOKEN" \
+  --data-urlencode "prefix=raw/" | jq '.result.objects[].key'
 ```
 
 ### Check queue backlogs
