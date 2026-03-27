@@ -1,13 +1,12 @@
 export const DEFAULT_MODEL = "deepseek-ai/deepseek-v3.2";
 
-const NVIDIA_MODELS = [
-  "deepseek-ai/deepseek-v3.2",
-  "deepseek-ai/deepseek-v3.1",
-  "moonshotai/kimi-k2-instruct",
-  "moonshotai/kimi-k2-instruct-0905",
+const FALLBACK_CHAIN = [
+  { provider: "custom-nvidia-nim", endpoint: "v1/chat/completions", model: "deepseek-ai/deepseek-v3.2" },
+  { provider: "custom-nvidia-nim", endpoint: "v1/chat/completions", model: "deepseek-ai/deepseek-v3.1" },
+  { provider: "custom-nvidia-nim", endpoint: "v1/chat/completions", model: "moonshotai/kimi-k2-instruct" },
+  { provider: "custom-nvidia-nim", endpoint: "v1/chat/completions", model: "moonshotai/kimi-k2-instruct-0905" },
+  { provider: "google-ai-studio", endpoint: "v1beta/openai/chat/completions", model: "gemini-2.5-flash" },
 ];
-
-const GEMINI_MODEL = "gemini-2.5-flash";
 
 export interface AiGatewayConfig {
   baseUrl: string;
@@ -28,52 +27,47 @@ export async function callAIGateway(
   messages: Array<{ role: string; content: string }>,
   options: { temperature?: number; max_tokens?: number } = {},
 ): Promise<ChatCompletionResponse> {
-  const query = {
-    messages,
-    temperature: options.temperature ?? 0.1,
-    max_tokens: options.max_tokens ?? 4096,
-  };
+  const errors: string[] = [];
 
-  const fallbackArray = [
-    ...NVIDIA_MODELS.map((model) => ({
-      provider: "custom-nvidia-nim",
-      endpoint: "v1/chat/completions",
-      headers: { "Content-Type": "application/json" },
-      query: { ...query, model },
-    })),
-    {
-      provider: "google-ai-studio",
-      endpoint: "v1beta/openai/chat/completions",
-      headers: { "Content-Type": "application/json" },
-      query: { ...query, model: GEMINI_MODEL },
-    },
-  ];
+  for (const step of FALLBACK_CHAIN) {
+    const url = `${config.baseUrl}/${step.provider}/${step.endpoint}`;
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "cf-aig-authorization": `Bearer ${config.cfAigToken}`,
+        },
+        body: JSON.stringify({
+          model: step.model,
+          messages,
+          temperature: options.temperature ?? 0.1,
+          max_tokens: options.max_tokens ?? 4096,
+        }),
+      });
 
-  const response = await fetch(config.baseUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "cf-aig-authorization": `Bearer ${config.cfAigToken}`,
-    },
-    body: JSON.stringify(fallbackArray),
-  });
+      if (!response.ok) {
+        const body = await response.text();
+        errors.push(`${step.model}: ${response.status} ${body.slice(0, 100)}`);
+        continue;
+      }
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`AI Gateway ${response.status}: ${body.slice(0, 200)}`);
+      const data = (await response.json()) as ChatCompletionResponse;
+      if (!data.choices?.[0]?.message?.content) {
+        errors.push(`${step.model}: empty response`);
+        continue;
+      }
+
+      if (step.model !== FALLBACK_CHAIN[0].model) {
+        console.log(`Used fallback model: ${step.model}`);
+      }
+      return data;
+    } catch (err) {
+      errors.push(`${step.model}: ${err}`);
+    }
   }
 
-  const step = response.headers.get("cf-aig-step");
-  if (step && step !== "0") {
-    console.log(`AI Gateway used fallback step ${step}`);
-  }
-
-  const data = (await response.json()) as ChatCompletionResponse;
-  if (!data.choices?.[0]?.message?.content) {
-    throw new Error("AI Gateway returned empty response from all models");
-  }
-
-  return data;
+  throw new Error(`All models failed: ${errors.join(" | ")}`);
 }
 
 export function extractContent(response: ChatCompletionResponse): string {
