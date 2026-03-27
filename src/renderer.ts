@@ -10,8 +10,6 @@ export interface RenderedArticle {
 }
 
 const RENDER_TIMEOUT_MS = 30_000;
-const CONTENT_CHECK_LIMIT = 2_000;
-const MIN_ARTICLE_LENGTH = 100;
 
 const CONTENT_CHECK_PROMPT = `You are a content validator. Given a rendered web page in markdown, determine if it contains actual article content or if it is a bot-protection page, captcha, error page, login wall, cookie consent wall, 404 page, or any other non-article content.
 
@@ -45,12 +43,9 @@ export async function renderArticle(
 }
 
 export async function isArticleContent(markdown: string, aiConfig: AiGatewayConfig): Promise<boolean> {
-  if (markdown.length < MIN_ARTICLE_LENGTH) return false;
-
-  const snippet = markdown.slice(0, CONTENT_CHECK_LIMIT);
   const data = await callAIGateway(aiConfig, DEFAULT_MODEL, [
     { role: "system", content: CONTENT_CHECK_PROMPT },
-    { role: "user", content: snippet },
+    { role: "user", content: markdown },
   ], { max_tokens: 8 });
 
   const answer = extractContent(data).trim().toUpperCase();
