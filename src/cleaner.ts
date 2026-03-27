@@ -58,7 +58,9 @@ export async function cleanArticle(
     throw new Error("Cleaner returned empty content");
   }
 
-  const r2CleanKey = article.r2RawKey.replace(/^raw\//, "clean/");
+  const r2CleanKey = article.r2RawKey.startsWith("raw/")
+    ? article.r2RawKey.replace(/^raw\//, "clean/")
+    : `clean/${article.r2RawKey}`;
   await bucket.put(r2CleanKey, cleanedContent, {
     customMetadata: {
       url: article.url,
