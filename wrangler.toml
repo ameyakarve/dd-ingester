@@ -9,6 +9,11 @@ crons = ["*/5 * * * *"]
 binding = "SEEN_URLS"
 id = "dfbf88ee16984601b5227d85902fe252"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "dd-ingester-db"
+database_id = "c29a8ecd-5fef-4dcc-8f35-f557b06a7e33"
+
 [[queues.producers]]
 queue = "rss-articles"
 binding = "RSS_QUEUE"
@@ -16,6 +21,10 @@ binding = "RSS_QUEUE"
 [[queues.producers]]
 queue = "rss-articles-rendered"
 binding = "RENDERED_QUEUE"
+
+[[queues.producers]]
+queue = "rss-articles-cleaned"
+binding = "CLEANED_QUEUE"
 
 [[queues.consumers]]
 queue = "rss-articles"
@@ -25,6 +34,12 @@ max_batch_timeout = 30
 
 [[queues.consumers]]
 queue = "rss-articles-rendered"
+max_retries = 5
+max_batch_size = 1
+max_batch_timeout = 60
+
+[[queues.consumers]]
+queue = "rss-articles-cleaned"
 max_retries = 5
 max_batch_size = 1
 max_batch_timeout = 60
