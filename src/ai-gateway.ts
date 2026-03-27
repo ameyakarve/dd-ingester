@@ -42,3 +42,7 @@ export async function callAIGateway(
 
   return (await response.json()) as ChatCompletionResponse;
 }
+
+export function extractContent(response: ChatCompletionResponse): string {
+  return response.choices?.[0]?.message?.content ?? "";
+}

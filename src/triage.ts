@@ -1,5 +1,11 @@
+import { z } from "zod";
 import type { CleanedArticle } from "./cleaner";
-import { callAIGateway, DEFAULT_MODEL, type AiGatewayConfig } from "./ai-gateway";
+import { callAIGateway, extractContent, DEFAULT_MODEL, type AiGatewayConfig } from "./ai-gateway";
+
+const TriageResponseSchema = z.object({
+  status: z.enum(["relevant", "irrelevant"]),
+  reason: z.string(),
+});
 
 export interface TriageResult {
   url: string;
@@ -68,23 +74,21 @@ export async function triageArticle(
     { role: "user", content: userMessage },
   ]);
 
-  const content = data.choices?.[0]?.message?.content ?? "";
+  const content = extractContent(data);
 
-  const jsonMatch = content.match(/\{[\s\S]*?"status"[\s\S]*?\}/);
-  if (!jsonMatch) {
-    throw new Error(`No JSON in triage response: ${content.slice(0, 200)}`);
+  let json: unknown;
+  try {
+    json = JSON.parse(content);
+  } catch {
+    throw new Error(`Triage response is not valid JSON: ${content.slice(0, 200)}`);
   }
-
-  const parsed = JSON.parse(jsonMatch[0]);
-  if (!["relevant", "irrelevant"].includes(parsed.status)) {
-    throw new Error(`Invalid triage status: ${parsed.status}`);
-  }
+  const parsed = TriageResponseSchema.parse(json);
 
   const result: TriageResult = {
     url: article.url,
     title: article.title,
     status: parsed.status,
-    reason: parsed.reason ?? "",
+    reason: parsed.reason,
   };
 
   console.log(`[TRIAGE] ${article.url} -> ${result.status}: ${result.reason}`);

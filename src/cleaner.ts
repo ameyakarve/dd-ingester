@@ -1,5 +1,5 @@
 import type { RenderedArticle } from "./renderer";
-import { callAIGateway, DEFAULT_MODEL, type AiGatewayConfig } from "./ai-gateway";
+import { callAIGateway, extractContent, DEFAULT_MODEL, type AiGatewayConfig } from "./ai-gateway";
 
 export interface CleanedArticle {
   url: string;
@@ -51,7 +51,7 @@ export async function cleanArticle(
     { role: "user", content: userMessage },
   ], { max_tokens: 8192 });
 
-  const cleanedContent = data.choices?.[0]?.message?.content ?? "";
+  const cleanedContent = extractContent(data);
   if (!cleanedContent) {
     throw new Error("Cleaner returned empty content");
   }
