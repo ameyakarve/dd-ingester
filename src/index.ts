@@ -10,7 +10,7 @@ export interface Env {
   DB: D1Database;
   RSS_QUEUE: Queue<FeedItem & { renderRetry?: number }>;
   ARTICLES_BUCKET: R2Bucket;
-  RENDERED_QUEUE: Queue<RenderedArticle>;
+  RENDERED_QUEUE: Queue<RenderedArticle & { renderRetry?: number }>;
   CLEANED_QUEUE: Queue<CleanedArticle>;
   CLOUDFLARE_ACCOUNT_ID: string;
   CLOUDFLARE_API_TOKEN: string;
@@ -24,6 +24,7 @@ const QUEUE_RENDERED = "rss-articles-rendered";
 const QUEUE_CLEANED = "rss-articles-cleaned";
 
 const MAX_RERENDER_RETRIES = 3;
+const RERENDER_DELAY_SECONDS = 60;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const KV_TTL_SECONDS = 14 * 24 * 60 * 60;
 const FEED_FETCH_TIMEOUT_MS = 10_000;
@@ -103,7 +104,7 @@ export default {
         const item = message.body as FeedItem & { renderRetry?: number };
         try {
           console.log(`Rendering: ${item.url}${item.renderRetry ? ` (re-render attempt ${item.renderRetry})` : ""}`);
-          const rendered = await renderArticle(item, env.CLOUDFLARE_ACCOUNT_ID, env.CLOUDFLARE_API_TOKEN, env.ARTICLES_BUCKET, ai);
+          const rendered = await renderArticle(item, env.CLOUDFLARE_ACCOUNT_ID, env.CLOUDFLARE_API_TOKEN, env.ARTICLES_BUCKET);
           await env.RENDERED_QUEUE.send({ ...rendered, renderRetry: item.renderRetry });
           message.ack();
           console.log(`Rendered and enqueued: ${item.url} -> ${rendered.r2RawKey}`);
@@ -114,7 +115,7 @@ export default {
       }
     } else if (batch.queue === QUEUE_RENDERED) {
       for (const message of batch.messages) {
-        const article = message.body as RenderedArticle;
+        const article = message.body as RenderedArticle & { renderRetry?: number };
         try {
           console.log(`Cleaning: ${article.url}`);
           const obj = await env.ARTICLES_BUCKET.get(article.r2RawKey);
@@ -133,7 +134,10 @@ export default {
               continue;
             }
             console.warn(`Bot content detected in raw R2 for ${article.url}, requeuing for re-render (attempt ${retryCount}/${MAX_RERENDER_RETRIES})`);
-            await env.RSS_QUEUE.send({ url: article.url, title: article.title, published: article.published, feedUrl: article.feedUrl, renderRetry: retryCount });
+            await env.RSS_QUEUE.send(
+              { url: article.url, title: article.title, published: article.published, feedUrl: article.feedUrl, renderRetry: retryCount },
+              { delaySeconds: RERENDER_DELAY_SECONDS * retryCount },
+            );
             message.ack();
             continue;
           }
