@@ -1,4 +1,5 @@
 import type { RenderedArticle } from "./renderer";
+import { callAIGateway, DEFAULT_MODEL, type AiGatewayConfig } from "./ai-gateway";
 
 export interface CleanedArticle {
   url: string;
@@ -9,7 +10,7 @@ export interface CleanedArticle {
   r2CleanKey: string;
 }
 
-const CLEAN_MODEL = "deepseek-ai/deepseek-v3.2";
+const CLEAN_MODEL = DEFAULT_MODEL;
 
 const SYSTEM_PROMPT = `You are a content extractor. Given a markdown document that was converted from a full web page, extract ONLY the main article content.
 
@@ -33,56 +34,31 @@ Keep:
 
 Return ONLY the cleaned article content as markdown. Do not add any commentary or wrapper text.`;
 
-const CONTENT_LIMIT = 30_000; // Allow more input for cleaning since we want full page
+const CONTENT_LIMIT = 30_000;
 
 export async function cleanArticle(
   article: RenderedArticle,
   rawMarkdown: string,
-  gatewayBaseUrl: string,
-  nvidiaApiKey: string,
-  cfAigToken: string,
+  aiConfig: AiGatewayConfig,
   bucket: R2Bucket,
-): Promise<{ cleaned: CleanedArticle; content: string }> {
+): Promise<CleanedArticle> {
   const truncatedInput = rawMarkdown.length > CONTENT_LIMIT
     ? rawMarkdown.slice(0, CONTENT_LIMIT) + "\n\n[TRUNCATED]"
     : rawMarkdown;
 
   const userMessage = `Title: ${article.title}\nURL: ${article.url}\n\n---\n\n${truncatedInput}`;
 
-  const response = await fetch(`${gatewayBaseUrl}/v1/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${nvidiaApiKey}`,
-      "cf-aig-authorization": `Bearer ${cfAigToken}`,
-    },
-    body: JSON.stringify({
-      model: CLEAN_MODEL,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userMessage },
-      ],
-      temperature: 0.1,
-      max_tokens: 8192,
-    }),
-  });
+  const data = await callAIGateway(aiConfig, CLEAN_MODEL, [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user", content: userMessage },
+  ], { max_tokens: 8192 });
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Cleaner ${response.status}: ${body.slice(0, 200)}`);
-  }
-
-  const data = (await response.json()) as {
-    choices: Array<{ message: { content: string } }>;
-  };
-
-  const cleanedContent = data.choices?.[0]?.message?.content || "";
+  const cleanedContent = data.choices?.[0]?.message?.content ?? "";
   if (!cleanedContent) {
     throw new Error("Cleaner returned empty content");
   }
 
-  // Store cleaned markdown in R2 under clean/ prefix
-  const r2CleanKey = `clean/${article.r2Key}`;
+  const r2CleanKey = article.r2RawKey.replace(/^raw\//, "clean/");
   await bucket.put(r2CleanKey, cleanedContent, {
     customMetadata: {
       url: article.url,
@@ -92,14 +68,12 @@ export async function cleanArticle(
     },
   });
 
-  const cleaned: CleanedArticle = {
+  return {
     url: article.url,
     title: article.title,
     published: article.published,
     feedUrl: article.feedUrl,
-    r2RawKey: article.r2Key,
+    r2RawKey: article.r2RawKey,
     r2CleanKey,
   };
-
-  return { cleaned, content: cleanedContent };
 }

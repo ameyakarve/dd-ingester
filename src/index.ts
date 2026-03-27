@@ -3,6 +3,7 @@ import { parseFeed, type FeedItem } from "./rss";
 import { renderArticle, type RenderedArticle } from "./renderer";
 import { cleanArticle, type CleanedArticle } from "./cleaner";
 import { triageArticle } from "./triage";
+import type { AiGatewayConfig } from "./ai-gateway";
 
 export interface Env {
   SEEN_URLS: KVNamespace;
@@ -18,48 +19,21 @@ export interface Env {
   CF_AIG_TOKEN: string;
 }
 
+const QUEUE_RSS = "rss-articles";
+const QUEUE_RENDERED = "rss-articles-rendered";
+const QUEUE_CLEANED = "rss-articles-cleaned";
+
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const KV_TTL_SECONDS = 14 * 24 * 60 * 60;
 const FEED_FETCH_TIMEOUT_MS = 10_000;
 
+function aiConfig(env: Env): AiGatewayConfig {
+  return { baseUrl: env.AI_GATEWAY_URL, nvidiaApiKey: env.NVIDIA_API_KEY, cfAigToken: env.CF_AIG_TOKEN };
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-
-    if (url.pathname === "/replay-clean") {
-      try {
-        const listed = await env.ARTICLES_BUCKET.list();
-        const enqueued: string[] = [];
-        const errors: string[] = [];
-
-        for (const obj of listed.objects) {
-          if (obj.key.startsWith("clean/")) continue; // Skip cleaned versions
-          try {
-            const head = await env.ARTICLES_BUCKET.head(obj.key);
-            if (!head?.customMetadata?.url) {
-              errors.push(`${obj.key}: no metadata`);
-              continue;
-            }
-
-            const article: RenderedArticle = {
-              url: head.customMetadata.url,
-              title: head.customMetadata.title ?? "",
-              published: head.customMetadata.published ?? "",
-              feedUrl: head.customMetadata.feedUrl ?? "",
-              r2Key: obj.key,
-            };
-            await env.RENDERED_QUEUE.send(article);
-            enqueued.push(obj.key);
-          } catch (err) {
-            errors.push(`${obj.key}: ${err}`);
-          }
-        }
-
-        return Response.json({ enqueued: enqueued.length, keys: enqueued, errors });
-      } catch (err) {
-        return Response.json({ error: String(err) }, { status: 500 });
-      }
-    }
 
     if (url.pathname === "/articles") {
       const status = url.searchParams.get("status");
@@ -72,17 +46,6 @@ export default {
       query += " ORDER BY published DESC LIMIT 100";
       const result = await env.DB.prepare(query).bind(...params).all();
       return Response.json(result.results);
-    }
-
-    if (url.pathname === "/test-queue") {
-      const testItem: FeedItem = {
-        url: "https://example.com/test-article",
-        title: "Test Article",
-        published: new Date().toISOString(),
-        feedUrl: "https://example.com/feed",
-      };
-      await env.RSS_QUEUE.send(testItem);
-      return Response.json({ sent: true, item: testItem });
     }
 
     return new Response("Not found", { status: 404 });
@@ -129,47 +92,38 @@ export default {
     console.log(`Enqueued ${newItems.length} new articles`);
   },
 
-  async queue(batch: MessageBatch<unknown>, env: Env, ctx: ExecutionContext): Promise<void> {
+  async queue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
     console.log(`Queue handler invoked. Queue: ${batch.queue}, messages: ${batch.messages.length}`);
 
-    if (batch.queue === "rss-articles") {
-      // Stage 1: Render raw markdown
+    if (batch.queue === QUEUE_RSS) {
       for (const message of batch.messages) {
+        const item = message.body as FeedItem;
         try {
-          const item = message.body as FeedItem;
           console.log(`Rendering: ${item.url}`);
-
           const rendered = await renderArticle(item, env.CLOUDFLARE_ACCOUNT_ID, env.CLOUDFLARE_API_TOKEN, env.ARTICLES_BUCKET);
           await env.RENDERED_QUEUE.send(rendered);
-
           message.ack();
-          console.log(`Rendered and enqueued: ${item.url} -> ${rendered.r2Key}`);
+          console.log(`Rendered and enqueued: ${item.url} -> ${rendered.r2RawKey}`);
         } catch (err) {
-          const item = message.body as FeedItem;
           console.error(`Failed to render ${item.url}: ${err}`);
           message.retry();
         }
       }
-    } else if (batch.queue === "rss-articles-rendered") {
-      // Stage 2: Clean with DeepSeek, store in R2 + D1
+    } else if (batch.queue === QUEUE_RENDERED) {
       for (const message of batch.messages) {
+        const article = message.body as RenderedArticle;
         try {
-          const article = message.body as RenderedArticle;
           console.log(`Cleaning: ${article.url}`);
-
-          const obj = await env.ARTICLES_BUCKET.get(article.r2Key);
+          const obj = await env.ARTICLES_BUCKET.get(article.r2RawKey);
           if (!obj) {
-            console.error(`R2 object not found: ${article.r2Key}`);
+            console.error(`R2 object not found: ${article.r2RawKey}`);
             message.ack();
             continue;
           }
           const rawMarkdown = await obj.text();
 
-          const { cleaned } = await cleanArticle(
-            article, rawMarkdown, env.AI_GATEWAY_URL, env.NVIDIA_API_KEY, env.CF_AIG_TOKEN, env.ARTICLES_BUCKET
-          );
+          const cleaned = await cleanArticle(article, rawMarkdown, aiConfig(env), env.ARTICLES_BUCKET);
 
-          // Upsert into D1
           await env.DB.prepare(
             `INSERT INTO articles (url, title, published, feed_url, r2_raw_key, r2_clean_key, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
@@ -183,22 +137,18 @@ export default {
 
           await env.CLEANED_QUEUE.send(cleaned);
           console.log(`Cleaned and stored: ${article.url} -> ${cleaned.r2CleanKey}`);
-
           message.ack();
         } catch (err) {
-          const article = message.body as RenderedArticle;
           console.error(`Failed to clean ${article.url}: ${err}`);
           message.retry();
         }
       }
-    } else if (batch.queue === "rss-articles-cleaned") {
-      // Stage 3: Triage with Kimi
+    } else if (batch.queue === QUEUE_CLEANED) {
       for (const message of batch.messages) {
+        const article = message.body as CleanedArticle;
         try {
-          const article = message.body as CleanedArticle;
           console.log(`Triaging: ${article.url}`);
 
-          // Fetch cleaned content from R2
           const obj = await env.ARTICLES_BUCKET.get(article.r2CleanKey);
           if (!obj) {
             console.error(`Cleaned R2 object not found: ${article.r2CleanKey}`);
@@ -207,27 +157,21 @@ export default {
           }
           const cleanedContent = await obj.text();
 
-          const result = await triageArticle(
-            article, cleanedContent, env.AI_GATEWAY_URL, env.NVIDIA_API_KEY, env.CF_AIG_TOKEN
-          );
+          const result = await triageArticle(article, cleanedContent, aiConfig(env));
 
-          // Update D1 with triage result
           await env.DB.prepare(
             `UPDATE articles SET triage_status = ?, triage_reason = ?, updated_at = datetime('now') WHERE url = ?`
           ).bind(result.status, result.reason, article.url).run();
 
           console.log(`Triaged: ${article.url} -> ${result.status}`);
-
-          // 5s delay between articles to avoid rate limits
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-
           message.ack();
         } catch (err) {
-          const article = message.body as CleanedArticle;
           console.error(`Failed to triage ${article.url}: ${err}`);
           message.retry();
         }
       }
+    } else {
+      console.error(`Unknown queue: ${batch.queue}`);
     }
   },
 } satisfies ExportedHandler<Env>;
@@ -239,8 +183,7 @@ async function fetchFeed(feedUrl: string, cutoffDate: Date): Promise<FeedItem[]>
   });
 
   if (!response.ok) {
-    console.warn(`Feed ${feedUrl} returned ${response.status}`);
-    return [];
+    throw new Error(`Feed ${feedUrl} returned ${response.status}`);
   }
 
   const xml = await response.text();
