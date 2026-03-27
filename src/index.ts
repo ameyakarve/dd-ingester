@@ -165,21 +165,20 @@ export default {
           }
           const rawMarkdown = await obj.text();
 
-          const { cleaned, content } = await cleanArticle(
+          const { cleaned } = await cleanArticle(
             article, rawMarkdown, env.AI_GATEWAY_URL, env.NVIDIA_API_KEY, env.CF_AIG_TOKEN, env.ARTICLES_BUCKET
           );
 
           // Upsert into D1
           await env.DB.prepare(
-            `INSERT INTO articles (url, title, published, feed_url, r2_raw_key, r2_clean_key, cleaned_content, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            `INSERT INTO articles (url, title, published, feed_url, r2_raw_key, r2_clean_key, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
              ON CONFLICT(url) DO UPDATE SET
                r2_clean_key = excluded.r2_clean_key,
-               cleaned_content = excluded.cleaned_content,
                updated_at = datetime('now')`
           ).bind(
             cleaned.url, cleaned.title, cleaned.published, cleaned.feedUrl,
-            cleaned.r2RawKey, cleaned.r2CleanKey, content
+            cleaned.r2RawKey, cleaned.r2CleanKey
           ).run();
 
           await env.CLEANED_QUEUE.send(cleaned);
