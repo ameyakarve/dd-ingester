@@ -51,7 +51,7 @@ export default {
     return new Response("Not found", { status: 404 });
   },
 
-  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
     const cutoffDate = new Date(Date.now() - SEVEN_DAYS_MS);
     console.log(`RSS poll starting. Cutoff: ${cutoffDate.toISOString()}`);
 
@@ -83,24 +83,26 @@ export default {
 
     if (newItems.length === 0) return;
 
+    await markUrlsSeen(newItems, env.SEEN_URLS);
+
     for (let i = 0; i < newItems.length; i += 100) {
       const batch = newItems.slice(i, i + 100).map((item) => ({ body: item }));
       await env.RSS_QUEUE.sendBatch(batch);
     }
 
-    ctx.waitUntil(markUrlsSeen(newItems, env.SEEN_URLS));
     console.log(`Enqueued ${newItems.length} new articles`);
   },
 
   async queue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
     console.log(`Queue handler invoked. Queue: ${batch.queue}, messages: ${batch.messages.length}`);
+    const ai = aiConfig(env);
 
     if (batch.queue === QUEUE_RSS) {
       for (const message of batch.messages) {
         const item = message.body as FeedItem;
         try {
           console.log(`Rendering: ${item.url}`);
-          const rendered = await renderArticle(item, env.CLOUDFLARE_ACCOUNT_ID, env.CLOUDFLARE_API_TOKEN, env.ARTICLES_BUCKET);
+          const rendered = await renderArticle(item, env.CLOUDFLARE_ACCOUNT_ID, env.CLOUDFLARE_API_TOKEN, env.ARTICLES_BUCKET, ai);
           await env.RENDERED_QUEUE.send(rendered);
           message.ack();
           console.log(`Rendered and enqueued: ${item.url} -> ${rendered.r2RawKey}`);
@@ -122,7 +124,7 @@ export default {
           }
           const rawMarkdown = await obj.text();
 
-          const cleaned = await cleanArticle(article, rawMarkdown, aiConfig(env), env.ARTICLES_BUCKET);
+          const cleaned = await cleanArticle(article, rawMarkdown, ai, env.ARTICLES_BUCKET);
 
           await env.DB.prepare(
             `INSERT INTO articles (url, title, published, feed_url, r2_raw_key, r2_clean_key, updated_at)
@@ -157,7 +159,7 @@ export default {
           }
           const cleanedContent = await obj.text();
 
-          const result = await triageArticle(article, cleanedContent, aiConfig(env));
+          const result = await triageArticle(article, cleanedContent, ai);
 
           await env.DB.prepare(
             `UPDATE articles SET triage_status = ?, triage_reason = ?, updated_at = datetime('now') WHERE url = ?`
@@ -211,11 +213,15 @@ async function filterNewUrls(items: FeedItem[], kv: KVNamespace): Promise<FeedIt
 }
 
 async function markUrlsSeen(items: FeedItem[], kv: KVNamespace): Promise<void> {
-  await Promise.all(
-    items.map((item) =>
-      kv.put(kvKey(item.url), item.published, { expirationTtl: KV_TTL_SECONDS })
-    )
-  );
+  const batchSize = 50;
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    await Promise.all(
+      batch.map((item) =>
+        kv.put(kvKey(item.url), item.published, { expirationTtl: KV_TTL_SECONDS })
+      )
+    );
+  }
 }
 
 function kvKey(url: string): string {

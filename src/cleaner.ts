@@ -10,8 +10,6 @@ export interface CleanedArticle {
   r2CleanKey: string;
 }
 
-const CLEAN_MODEL = DEFAULT_MODEL;
-
 const SYSTEM_PROMPT = `You are a content extractor. Given a markdown document that was converted from a full web page, extract ONLY the main article content.
 
 Remove all of the following:
@@ -48,7 +46,7 @@ export async function cleanArticle(
 
   const userMessage = `Title: ${article.title}\nURL: ${article.url}\n\n---\n\n${truncatedInput}`;
 
-  const data = await callAIGateway(aiConfig, CLEAN_MODEL, [
+  const data = await callAIGateway(aiConfig, DEFAULT_MODEL, [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: userMessage },
   ], { max_tokens: 8192 });

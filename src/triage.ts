@@ -8,7 +8,6 @@ export interface TriageResult {
   reason: string;
 }
 
-const TRIAGE_MODEL = DEFAULT_MODEL;
 
 const SYSTEM_PROMPT = `You are a triage classifier for a travel rewards knowledge base focused on the Indian market.
 
@@ -27,20 +26,26 @@ Your job: Given an article's title, URL, and cleaned markdown content, classify 
 
 RELEVANT — contains actionable information about:
 - Changes to FFP rules (earning, redemption, expiry, elite status, award charts)
-- New or changed credit card transfer partners or ratios
-- Buy-points promotions, award sales, or status match opportunities
-- Hotel program changes (points earning, redemption, elite tiers, promotions)
+- New or changed credit card transfer partners or ratios (globally applicable)
+- Buy-points promotions, award sales, or status match opportunities (for programs Indians can access)
+- Hotel program changes (points earning, redemption, elite tiers, promotions) that apply globally or to India
 - Alliance membership changes
-- Car rental program or travel portal updates
+- Bilt Rewards program-level changes (transfer partners, transfer bonuses, program rules) — Bilt is accessible to Indians via Rakuten transfers without a US card
 
 IRRELEVANT — includes:
-- Trip reports, hotel/lounge reviews, personal travel stories
-- Credit card reviews for non-Indian markets (US, UK, Australian cards)
+- Trip reports, hotel/lounge reviews, personal travel stories — even if they mention award pricing or points redemption values
+- Evergreen strategy guides or tips articles that are not about a specific program change or new promotion
+- Credit card product reviews, new card launches, or card-specific feature updates for non-Indian markets (US, UK, Australian cards) — this includes Bilt card-only content (card features, app updates, card benefits)
+- Promotions restricted to specific non-Indian geographies (e.g., "US residents only", "Greater China only", "UK only") — check the terms/eligibility
+- Trivially small or possibly-targeted promotions (e.g., earn 300 bonus miles for opting into notifications)
 - General travel tips, packing guides, destination tourism content
 - New airline routes or schedule changes
 - Sponsored content, affiliate roundups, "best of" listicles without new information
 - News about airline operations (delays, strikes, IT outages)
 - Restaurant, dining, or non-travel content
+- Gift card deals, cashback portal promotions, or shopping portal updates
+
+KEY DISTINCTION: A hotel review that mentions "I redeemed 40,000 points" is IRRELEVANT (it's a review). A news article announcing "Category changes mean this hotel now costs 40,000 points" is RELEVANT (it's a program change). Focus on whether the article reports a NEW change or promotion, not whether it contains loyalty program information.
 
 Respond with ONLY a JSON object:
 {"status": "relevant"|"irrelevant", "reason": "one-sentence explanation"}`;
@@ -58,7 +63,7 @@ export async function triageArticle(
 
   const userMessage = `Title: ${article.title}\nURL: ${article.url}\n\n${truncatedContent}`;
 
-  const data = await callAIGateway(aiConfig, TRIAGE_MODEL, [
+  const data = await callAIGateway(aiConfig, DEFAULT_MODEL, [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: userMessage },
   ]);
