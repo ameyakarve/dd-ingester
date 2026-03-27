@@ -73,17 +73,10 @@ export async function triageArticle(
   const data = await callAIGateway(aiConfig, DEFAULT_MODEL, [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: userMessage },
-  ]);
+  ], { response_format: { type: "json_object" } });
 
   const content = extractContent(data);
-
-  let json: unknown;
-  try {
-    json = JSON.parse(content);
-  } catch {
-    throw new Error(`Triage response is not valid JSON: ${content.slice(0, 200)}`);
-  }
-  const parsed = TriageResponseSchema.parse(json);
+  const parsed = TriageResponseSchema.parse(JSON.parse(content));
 
   const result: TriageResult = {
     url: article.url,

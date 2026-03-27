@@ -25,7 +25,7 @@ export async function callAIGateway(
   config: AiGatewayConfig,
   _model: string,
   messages: Array<{ role: string; content: string }>,
-  options: { temperature?: number; max_tokens?: number } = {},
+  options: { temperature?: number; max_tokens?: number; response_format?: { type: string } } = {},
 ): Promise<ChatCompletionResponse> {
   const errors: string[] = [];
 
@@ -43,6 +43,7 @@ export async function callAIGateway(
           messages,
           temperature: options.temperature ?? 0.1,
           max_tokens: options.max_tokens ?? 4096,
+          ...(options.response_format && { response_format: options.response_format }),
         }),
       });
 
