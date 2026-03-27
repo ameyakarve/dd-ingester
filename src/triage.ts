@@ -34,16 +34,17 @@ RELEVANT — contains actionable information about:
 - Changes to FFP rules (earning, redemption, expiry, elite status, award charts)
 - New or changed credit card transfer partners or ratios (globally applicable)
 - Buy-points promotions, award sales, or status match opportunities (for programs Indians can access)
-- Hotel program changes (points earning, redemption, elite tiers, promotions) that apply globally or to India
+- Hotel program changes (points earning, redemption, elite tiers, promotions) — hotel loyalty programs (Marriott, Hyatt, Accor, IHG, Hilton, Wyndham, etc.) are GLOBAL programs, so promos at ANY destination are relevant as long as the program itself is globally accessible. A "Double Points in Greater China" promo from Accor is RELEVANT because any ALL member can book there.
 - Alliance membership changes
 - Bilt Rewards program-level changes (transfer partners, transfer bonuses, program rules) — Bilt is accessible to Indians via Rakuten transfers without a US card
+- Free miles/points offers with no regional or card restriction — if anyone worldwide can earn free points (e.g., "click here for 300 free AAdvantage miles"), it's RELEVANT regardless of how small the amount
 
 IRRELEVANT — includes:
 - Trip reports, hotel/lounge reviews, personal travel stories — even if they mention award pricing or points redemption values
 - Evergreen strategy guides or tips articles that are not about a specific program change or new promotion
 - Credit card product reviews, new card launches, or card-specific feature updates for non-Indian markets (US, UK, Australian cards) — this includes Bilt card-only content (card features, app updates, card benefits)
-- Promotions restricted to specific non-Indian geographies (e.g., "US residents only", "Greater China only", "UK only") — check the terms/eligibility
-- Trivially small or possibly-targeted promotions (e.g., earn 300 bonus miles for opting into notifications)
+- Promotions restricted to a credit card or banking product not available in India (e.g., "use your Citi ThankYou card", "Choice Privileges transfer bonus" where earning Choice points requires US presence)
+- Programs not accessible from India: Citi ThankYou (exited India), Chase Ultimate Rewards, Capital One, US Bank — these are US-only credit card programs
 - General travel tips, packing guides, destination tourism content
 - New airline routes or schedule changes
 - Sponsored content, affiliate roundups, "best of" listicles without new information
