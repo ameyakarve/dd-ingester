@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { CleanedArticle } from "./cleaner";
-import { callAIGateway, extractContent, DEFAULT_MODEL, type AiGatewayConfig } from "./ai-gateway";
+import { callAIGateway, type AiGatewayConfig } from "./ai-gateway";
 
 const TriageResponseSchema = z.object({
   status: z.enum(["relevant", "irrelevant"]),
@@ -70,13 +70,12 @@ export async function triageArticle(
 
   const userMessage = `Title: ${article.title}\nURL: ${article.url}\n\n${truncatedContent}`;
 
-  const data = await callAIGateway(aiConfig, DEFAULT_MODEL, [
+  const text = await callAIGateway(aiConfig, [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: userMessage },
-  ], { response_format: { type: "json_object" } });
+  ]);
 
-  const content = extractContent(data);
-  const parsed = TriageResponseSchema.parse(JSON.parse(content));
+  const parsed = TriageResponseSchema.parse(JSON.parse(text));
 
   const result: TriageResult = {
     url: article.url,

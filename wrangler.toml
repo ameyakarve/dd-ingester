@@ -50,7 +50,6 @@ binding = "ARTICLES_BUCKET"
 
 [vars]
 CLOUDFLARE_ACCOUNT_ID = "e0bc1f55dc6fc3f8fe870087199a2ee3"
-AI_GATEWAY_URL = "https://gateway.ai.cloudflare.com/v1/e0bc1f55dc6fc3f8fe870087199a2ee3/dd-ai-gateway"
 
 [observability]
 enabled = true

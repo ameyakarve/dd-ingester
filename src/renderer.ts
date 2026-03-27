@@ -1,5 +1,5 @@
 import type { FeedItem } from "./rss";
-import { callAIGateway, extractContent, DEFAULT_MODEL, type AiGatewayConfig } from "./ai-gateway";
+import { callAIGateway, type AiGatewayConfig } from "./ai-gateway";
 
 export interface RenderedArticle {
   url: string;
@@ -43,13 +43,12 @@ export async function renderArticle(
 }
 
 export async function isArticleContent(markdown: string, aiConfig: AiGatewayConfig): Promise<boolean> {
-  const data = await callAIGateway(aiConfig, DEFAULT_MODEL, [
+  const text = await callAIGateway(aiConfig, [
     { role: "system", content: CONTENT_CHECK_PROMPT },
     { role: "user", content: markdown },
-  ], { max_tokens: 8 });
+  ], { maxOutputTokens: 8 });
 
-  const answer = extractContent(data).trim().toUpperCase();
-  return answer.startsWith("YES");
+  return text.trim().toUpperCase().startsWith("YES");
 }
 
 async function fetchMarkdown(url: string, accountId: string, apiToken: string): Promise<string> {
