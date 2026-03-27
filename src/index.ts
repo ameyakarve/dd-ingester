@@ -15,8 +15,6 @@ export interface Env {
   CLOUDFLARE_ACCOUNT_ID: string;
   CLOUDFLARE_API_TOKEN: string;
   AI_GATEWAY_URL: string;
-  NVIDIA_API_KEY: string;
-  GOOGLE_AI_STUDIO_KEY: string;
   CF_AIG_TOKEN: string;
 }
 
@@ -31,7 +29,7 @@ const KV_TTL_SECONDS = 14 * 24 * 60 * 60;
 const FEED_FETCH_TIMEOUT_MS = 10_000;
 
 function aiConfig(env: Env): AiGatewayConfig {
-  return { gatewayBaseUrl: env.AI_GATEWAY_URL, nvidiaApiKey: env.NVIDIA_API_KEY, googleAiStudioKey: env.GOOGLE_AI_STUDIO_KEY, cfAigToken: env.CF_AIG_TOKEN };
+  return { baseUrl: env.AI_GATEWAY_URL, cfAigToken: env.CF_AIG_TOKEN };
 }
 
 export default {
