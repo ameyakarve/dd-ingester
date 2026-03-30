@@ -26,6 +26,10 @@ binding = "RENDERED_QUEUE"
 queue = "rss-articles-cleaned"
 binding = "CLEANED_QUEUE"
 
+[[queues.producers]]
+queue = "rss-articles-incorporate"
+binding = "INCORPORATE_QUEUE"
+
 [[queues.consumers]]
 queue = "rss-articles"
 max_retries = 5
