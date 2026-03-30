@@ -12,6 +12,7 @@ export interface Env {
   ARTICLES_BUCKET: R2Bucket;
   RENDERED_QUEUE: Queue<RenderedArticle & { renderRetry?: number }>;
   CLEANED_QUEUE: Queue<CleanedArticle>;
+  INCORPORATE_QUEUE: Queue;
   CLOUDFLARE_ACCOUNT_ID: string;
   CLOUDFLARE_API_TOKEN: string;
   CF_AIG_TOKEN: string;
@@ -183,7 +184,19 @@ export default {
             `UPDATE articles SET triage_status = ?, triage_reason = ?, updated_at = datetime('now') WHERE url = ?`
           ).bind(result.status, result.reason, article.url).run();
 
-          console.log(`Triaged: ${article.url} -> ${result.status}`);
+          if (result.status === "relevant") {
+            await env.INCORPORATE_QUEUE.send({
+              url: article.url,
+              title: article.title,
+              published: article.published,
+              feedUrl: article.feedUrl,
+              r2CleanKey: article.r2CleanKey,
+              triageReason: result.reason,
+            });
+            console.log(`Triaged: ${article.url} -> ${result.status}, queued for incorporation`);
+          } else {
+            console.log(`Triaged: ${article.url} -> ${result.status}`);
+          }
           message.ack();
         } catch (err) {
           console.error(`Failed to triage ${article.url}: ${err}`);
