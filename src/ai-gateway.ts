@@ -14,7 +14,7 @@ export async function callAIGateway(
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
   options: { temperature?: number; maxOutputTokens?: number } = {},
 ): Promise<string> {
-  const url = `https://gateway.ai.cloudflare.com/v1/${config.accountId}/${config.gateway}/dynamic/triage/chat/completions`;
+  const url = `https://gateway.ai.cloudflare.com/v1/${config.accountId}/${config.gateway}/compat/chat/completions`;
 
   const response = await fetch(url, {
     method: "POST",
@@ -23,6 +23,7 @@ export async function callAIGateway(
       "cf-aig-authorization": `Bearer ${config.cfAigToken}`,
     },
     body: JSON.stringify({
+      model: "dynamic/triage",
       messages,
       temperature: options.temperature ?? 0.1,
       max_tokens: options.maxOutputTokens ?? 4096,
