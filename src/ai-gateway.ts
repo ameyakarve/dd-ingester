@@ -14,7 +14,7 @@ export async function callAIGateway(
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
   options: { temperature?: number; maxOutputTokens?: number } = {},
 ): Promise<string> {
-  const url = `https://gateway.ai.cloudflare.com/v1/${config.accountId}/${config.gateway}/dynamic/triage`;
+  const url = `https://gateway.ai.cloudflare.com/v1/${config.accountId}/${config.gateway}/dynamic/triage/chat/completions`;
 
   const response = await fetch(url, {
     method: "POST",
@@ -29,23 +29,27 @@ export async function callAIGateway(
     }),
   });
 
+  const rawBody = await response.text();
+
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`AI Gateway ${response.status}: ${body.slice(0, 300)}`);
+    throw new Error(`AI Gateway ${response.status}: ${rawBody.slice(0, 300)}`);
   }
 
-  const data = await response.json() as {
-    choices?: Array<{ message?: { content?: string } }>;
-    error?: { message?: string };
-  };
-
-  if (data.error) {
-    throw new Error(`AI Gateway error: ${data.error.message}`);
+  // Parse response — handle malformed JSON gracefully
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(rawBody);
+  } catch {
+    throw new Error(`AI Gateway returned non-JSON: ${rawBody.slice(0, 300)}`);
   }
 
-  const text = data.choices?.[0]?.message?.content;
+  if ((data as any).error) {
+    throw new Error(`AI Gateway error: ${(data as any).error?.message || JSON.stringify(data.error)}`);
+  }
+
+  const text = (data as any).choices?.[0]?.message?.content as string | undefined;
   if (!text) {
-    throw new Error("AI Gateway returned empty response");
+    throw new Error(`AI Gateway returned no content: ${rawBody.slice(0, 300)}`);
   }
 
   return text;
