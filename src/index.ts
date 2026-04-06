@@ -16,6 +16,7 @@ export interface Env {
   CLOUDFLARE_ACCOUNT_ID: string;
   CLOUDFLARE_API_TOKEN: string;
   CF_AIG_TOKEN: string;
+  MODEL_ROUTER: Fetcher;
 }
 
 const QUEUE_RSS = "rss-articles";
@@ -28,10 +29,8 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const KV_TTL_SECONDS = 14 * 24 * 60 * 60;
 const FEED_FETCH_TIMEOUT_MS = 10_000;
 
-const AI_GATEWAY_NAME = "dd-ai-gateway";
-
 function aiConfig(env: Env): AiGatewayConfig {
-  return { accountId: env.CLOUDFLARE_ACCOUNT_ID, gateway: AI_GATEWAY_NAME, cfAigToken: env.CF_AIG_TOKEN };
+  return { accountId: env.CLOUDFLARE_ACCOUNT_ID, gateway: "", cfAigToken: "", fetcher: env.MODEL_ROUTER };
 }
 
 export default {

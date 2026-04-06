@@ -46,7 +46,7 @@ export async function isArticleContent(markdown: string, aiConfig: AiGatewayConf
   const text = await callAIGateway(aiConfig, [
     { role: "system", content: CONTENT_CHECK_PROMPT },
     { role: "user", content: markdown },
-  ], { maxOutputTokens: 8 });
+  ], { maxOutputTokens: 8, model: "dynamic/validate" });
 
   return text.trim().toUpperCase().startsWith("YES");
 }

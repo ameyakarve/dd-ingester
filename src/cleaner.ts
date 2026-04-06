@@ -49,7 +49,7 @@ export async function cleanArticle(
   const cleanedContent = await callAIGateway(aiConfig, [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: userMessage },
-  ], { maxOutputTokens: 8192 });
+  ], { maxOutputTokens: 8192, model: "dynamic/clean" });
 
   const r2CleanKey = article.r2RawKey.startsWith("raw/")
     ? article.r2RawKey.replace(/^raw\//, "clean/")
