@@ -1,11 +1,5 @@
-import { z } from "zod";
 import type { CleanedArticle } from "./cleaner";
 import { callAIGateway, type AiGatewayConfig } from "./ai-gateway";
-
-const TriageResponseSchema = z.object({
-  status: z.enum(["relevant", "irrelevant"]),
-  reason: z.string(),
-});
 
 export interface TriageResult {
   url: string;
@@ -54,8 +48,13 @@ IRRELEVANT — includes:
 
 KEY DISTINCTION: A hotel review that mentions "I redeemed 40,000 points" is IRRELEVANT (it's a review). A news article announcing "Category changes mean this hotel now costs 40,000 points" is RELEVANT (it's a program change). Focus on whether the article reports a NEW change or promotion, not whether it contains loyalty program information.
 
-Respond with ONLY a JSON object:
-{"status": "relevant"|"irrelevant", "reason": "one-sentence explanation"}`;
+Respond with EXACTLY two lines:
+Line 1: RELEVANT or IRRELEVANT
+Line 2: One-sentence explanation
+
+Example:
+RELEVANT
+Marriott Bonvoy announced category changes affecting award pricing globally.`;
 
 const ARTICLE_CONTENT_LIMIT = 8000;
 
@@ -75,13 +74,16 @@ export async function triageArticle(
     { role: "user", content: userMessage },
   ]);
 
-  const parsed = TriageResponseSchema.parse(JSON.parse(text));
+  const lines = text.trim().split("\n").filter((l) => l.trim());
+  const firstWord = (lines[0] || "").trim().toUpperCase();
+  const status = firstWord.startsWith("RELEVANT") ? "relevant" : "irrelevant";
+  const reason = lines.slice(1).join(" ").trim() || lines[0]?.trim() || "No reason provided";
 
   const result: TriageResult = {
     url: article.url,
     title: article.title,
-    status: parsed.status,
-    reason: parsed.reason,
+    status,
+    reason,
   };
 
   console.log(`[TRIAGE] ${article.url} -> ${result.status}: ${result.reason}`);
