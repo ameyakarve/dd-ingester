@@ -41,12 +41,14 @@ queue = "rss-articles-rendered"
 max_retries = 5
 max_batch_size = 1
 max_batch_timeout = 60
+max_concurrency = 1
 
 [[queues.consumers]]
 queue = "rss-articles-cleaned"
 max_retries = 5
 max_batch_size = 1
 max_batch_timeout = 60
+max_concurrency = 1
 
 [[r2_buckets]]
 bucket_name = "dd-articles-markdown"
